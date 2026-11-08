@@ -118,3 +118,37 @@ pacotes na janela recebem a técnica como rótulo *ground-truth*; fora das janel
 `origin` = `rodriguesedub/attackzoo` (nosso fork privado). `upstream` =
 `GT-IoTEdu/attackzoo-sbseg26` com **push desabilitado** — nenhum commit nosso
 chega ao repositório autoral (lição do D042).
+
+## 9. Bateria n≥30 (quando o Santin aprovar)
+
+`pibit/run_bateria.sh` orquestra a bateria do **vetor A** (WebPostExploit) sobre
+H0–H3, `n≥30` por cenário (D016), **travada** por `--run` +
+`PIBIT_I_HAVE_SANTIN_APPROVAL=1` (D040). Dry-run (imprime o plano, nada roda):
+
+```bash
+pibit/run_bateria.sh
+```
+
+Por cenário H: provisiona o lab no nível H (`LAB_PROVISION_CMD`) e verifica
+(`LAB_VERIFY_CMD`, 22/22). Por run: **reinicia** o lab (`LAB_RESET_CMD` =
+`down -v && up`, independência D019), confere o alvo com healthcheck (não se
+ataca lab morto — lição do DVWA), roda o `experiment` (captura + motor + features
++ dataset) e **rotula** com `label_mitre.py`. É **resumível** (runs com `.done`
+são puladas) e grava `manifest.json` por run (SHAs do attackzoo e do hbgpt,
+modelo, tempos) para reprodutibilidade. No fim, `pibit/aggregate_bateria.py`
+junta tudo em `datasets/bateria_<stamp>.csv` + `summary.md` (linhas por
+cenário/técnica, custo estimado). Sem seed fixa (D018).
+
+**Pré-condições de execução** (no **host do lab**, tipicamente Linux):
+- `tcpdump` com permissão para capturar em `CAP_IFACE` (em macOS a bridge do
+  Docker não é visível ao `tcpdump` do host — rode no host/VM Linux do lab).
+- venv do hbgpt ativo (`wintermute` no PATH) e `.env` com `llm.api_key`.
+- **Confirmar** `LAB_DIR` e `LAB_*_CMD` no `config.env` contra o seu sbseg25-IaC-ZT.
+
+> Só o **vetor A** está automatizado aqui. B (credencial baixo-privilégio) e C
+> (shell SSH) entram quando os use cases SSH do motor forem conectados — mesma
+> mecânica de captura, outro hook.
+>
+> Ineficiência conhecida: o `experiment` dorme a janela `ATTACK` inteira mesmo que
+> o agente termine antes (via `EndRun`). Ajuste `ATTACK` ao maior tempo de run
+> observado no piloto; encerrar a janela no `EndRun` é melhoria futura.
