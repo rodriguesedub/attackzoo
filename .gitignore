@@ -159,3 +159,12 @@ local_settings.py
 db.sqlite3
 db.sqlite3-journal
 .pypirc
+
+# ---------------------------------------------------------------------------
+# pibit: contexto PIBIT/WTICG (adaptacao da captura p/ o WebPostExploit)
+# ---------------------------------------------------------------------------
+# O padrao 'tests/' acima ignora qualquer dir 'tests'; reincluir os nossos:
+!pibit/tests/
+!pibit/tests/*.py
+# Config local (caminhos / possiveis segredos) -- NAO versionar:
+pibit/config.env
