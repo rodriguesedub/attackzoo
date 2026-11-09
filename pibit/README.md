@@ -52,12 +52,13 @@ lado a lado com o `.pcap` daquela execução.
 | Pendência | Onde | Status nesta entrega |
 |---|---|---|
 | **Captura `.pcap` por execução** | attackzoo (aqui) | **Feito** como *wiring*: hook + driver + dataset. Falta só rodar (após aval). |
-| **Healthcheck do alvo** | parcial aqui / motor | **Disponibilidade** via `--probes http` (nível orquestração) feito aqui. O healthcheck **por-round dentro** do `WebPostExploit` é mudança no motor → follow-up no hbgpt. |
-| **MITRE como campo obrigatório da ação** | motor (hbgpt) | Hoje é **instrução de prompt** (`POST_EXPLOIT_MITRE`). Torná-lo campo estrutural da ação é mudança no hbgpt → follow-up. O **labeler** aqui já consome o rótulo `MITRE: <id> <nome>` por passo. |
+| **Healthcheck do alvo** | motor (hbgpt) + aqui | **Feito.** Disponibilidade na orquestração via `--probes http` (aqui) **e** healthcheck **por-round** dentro do `WebPostExploit` (motor): a cada round o agente sonda `HEAD /` e **encerra a run** se o alvo ficar mudo por `health_max_consecutive_down` probes, gravando `HEALTHCHECK round=N alive=…` no trace. |
+| **MITRE como campo obrigatório da ação** | motor (hbgpt) + aqui | **Feito.** No motor, cada `HTTPRequest` agora exige o campo **estrutural** `mitre_technique` (capturado nos argumentos da tool call no trace — sobrevive à poda da janela de contexto), não só a linha de prompt. O **labeler** (`label_mitre.py`) e a **telemetria** (`analyze_telemetry.py`) **preferem** esse campo, caindo para a linha `MITRE: <id> <nome>` do chat (compatível com os traces do piloto3). |
 
-> Resumo honesto: esta sessão entrega **a camada de captura/rotulação** (attackzoo).
-> As duas mudanças *internas ao motor* ficam para quando o `hackingBuddyGPT` estiver
-> conectado — não dá para fazê-las a partir deste repositório.
+> Resumo honesto: as **quatro** pendências do motor estão fechadas no `hackingBuddyGPT`
+> (healthcheck por-round; campo `mitre_technique` estrutural; remoção da "dica de CTF"
+> do prompt; texto do `EndRun`). A camada de captura/rotulação/telemetria vive aqui.
+> **Nada foi executado ainda** — a medição depende do aval do Santin (D040).
 
 ## 4. Cenários H0–H3 (atenção ao `L0`)
 
@@ -71,14 +72,28 @@ roda em **todos**, inclusive H0.
 
 ## 5. Uso (NÃO executar ainda)
 
+**Ponto de entrada único: `pibit/pentest.sh`.** Ele orquestra tudo e **não
+reimplementa** motor/lab — delega ao `run_bateria.sh`, que carrega a **trava
+dupla**. Comandos somente-leitura nunca sobem o lab nem rodam o motor:
+
 ```bash
 cp pibit/config.example.env pibit/config.env   # edite HBGPT_DIR, GLPI_HOST, CAP_IFACE...
-pibit/run_experiment_webpostexploit.sh         # DRY-RUN: só imprime o comando
+pibit/pentest.sh preflight        # checa wintermute/tcpdump/curl/python3, HBGPT_DIR, LAB_DIR + SHAs/modelo
+pibit/pentest.sh plan             # DRY-RUN: plano da bateria (n≥30) e do piloto (n=1)
+pibit/pentest.sh pilot            # sem --run -> DRY-RUN (nada executa)
+pibit/pentest.sh analyze [DIR]    # telemetria por run (analyze_telemetry.py)
+pibit/pentest.sh aggregate [DIR]  # dataset agregado + summary.md (aggregate_bateria.py)
+pibit/pentest.sh status [DIR]     # conta .done/.status por cenário
 ```
 
-A execução real está **bloqueada por trava dupla** (`--run` + `PIBIT_I_HAVE_SANTIN_APPROVAL=1`),
-porque **nenhuma execução acontece até o aval do Santin** (D040). O piloto usa
-`RUNS=1`; a bateria pré-registrada é **n≥30 por cenário, n igual entre cenários** (D016).
+(O driver de baixo nível `pibit/run_experiment_webpostexploit.sh` continua
+disponível para 1 run avulsa; `pentest.sh` é a camada acima dele + `run_bateria.sh`.)
+
+A execução real está **bloqueada por trava dupla** (`--run` +
+`PIBIT_I_HAVE_SANTIN_APPROVAL=1`), porque **nenhuma execução acontece até o aval
+do Santin** (D040) — ex.: `PIBIT_I_HAVE_SANTIN_APPROVAL=1 pibit/pentest.sh pilot --run`.
+O piloto usa `RUNS=1`; a bateria pré-registrada é **n≥30 por cenário, n igual
+entre cenários** (D016).
 
 ## 6. Rotulação por cenário + MITRE (C4)
 
@@ -130,20 +145,23 @@ pibit/run_bateria.sh
 ```
 
 Por cenário H: provisiona o lab no nível H (`LAB_PROVISION_CMD`) e verifica
-(`LAB_VERIFY_CMD`, 22/22). Por run: **reinicia** o lab (`LAB_RESET_CMD` =
-`down -v && up`, independência D019), confere o alvo com healthcheck (não se
-ataca lab morto — lição do DVWA), roda o `experiment` (captura + motor + features
-+ dataset) e **rotula** com `label_mitre.py`. É **resumível** (runs com `.done`
-são puladas) e grava `manifest.json` por run (SHAs do attackzoo e do hbgpt,
-modelo, tempos) para reprodutibilidade. No fim, `pibit/aggregate_bateria.py`
-junta tudo em `datasets/bateria_<stamp>.csv` + `summary.md` (linhas por
-cenário/técnica, custo estimado). Sem seed fixa (D018).
+(`LAB_VERIFY_CMD`, 22/22). Por run: **reinicia** o lab ao estado inicial do nível
+(`LAB_RESET_CMD` = `./reset.sh && ./apply.sh {H}` — o `reset.sh` **não aceita
+argumento**, só faz `docker compose down -v`; o `apply.sh {H}` recria o nível;
+independência D019), confere o alvo com healthcheck (não se ataca lab morto —
+lição do DVWA), roda o `experiment` (captura + motor + features + dataset) e
+**rotula** com `label_mitre.py`. É **resumível** (runs com `.done` são puladas) e
+grava `manifest.json` por run (SHAs do attackzoo e do hbgpt, modelo, tempos) para
+reprodutibilidade. No fim, `pibit/aggregate_bateria.py` junta tudo em
+`datasets/bateria_<stamp>.csv` + `summary.md` (linhas por cenário/técnica, custo
+estimado) e `pibit/analyze_telemetry.py` extrai a **telemetria por run** (rounds,
+tokens, custo estimado, **aderência MITRE**, disponibilidade). Sem seed fixa (D018).
 
 **Pré-condições de execução** (no **host do lab**, tipicamente Linux):
 - `tcpdump` com permissão para capturar em `CAP_IFACE` (em macOS a bridge do
   Docker não é visível ao `tcpdump` do host — rode no host/VM Linux do lab).
 - venv do hbgpt ativo (`wintermute` no PATH) e `.env` com `llm.api_key`.
-- **Confirmar** `LAB_DIR` e `LAB_*_CMD` no `config.env` contra o seu sbseg25-IaC-ZT.
+- **Confirmar** `LAB_DIR` (default corrigido: `../infra/sbseg25-iac-zt`) e os `LAB_*_CMD` no `config.env` contra o seu sbseg25-IaC-ZT.
 
 > Só o **vetor A** está automatizado aqui. B (credencial baixo-privilégio) e C
 > (shell SSH) entram quando os use cases SSH do motor forem conectados — mesma

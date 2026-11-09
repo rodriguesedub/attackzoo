@@ -44,10 +44,10 @@ HEALTH_RETRIES="${HEALTH_RETRIES:-6}"; HEALTH_SLEEP="${HEALTH_SLEEP:-5}"
 
 # Ciclo de vida do lab -- CONFIRMAR contra o sbseg25-IaC-ZT. {H} = nivel (H0..H3).
 # Deixe uma variavel VAZIA para pular aquela etapa (ex.: provisionar manualmente).
-LAB_DIR="${LAB_DIR:-../sbseg25-iac-zt}"
+LAB_DIR="${LAB_DIR:-../infra/sbseg25-iac-zt}"
 LAB_PROVISION_CMD="${LAB_PROVISION_CMD:-./apply.sh {H}}"       # sobe o lab no nivel H (1x por cenario)
 LAB_VERIFY_CMD="${LAB_VERIFY_CMD:-./verify/verify.sh {H}}"     # 22/22 controles + fingerprint
-LAB_RESET_CMD="${LAB_RESET_CMD:-./reset.sh {H}}"              # reinicio entre runs: down -v && up (estado inicial de H)
+LAB_RESET_CMD="${LAB_RESET_CMD:-./reset.sh && ./apply.sh {H}}"  # reinicio entre runs (D019): reset.sh NAO aceita arg (so "down -v"); apply.sh {H} recria o estado inicial do nivel
 LAB_TEARDOWN_CMD="${LAB_TEARDOWN_CMD:-}"                       # opcional: derruba no fim do cenario
 
 HOOK_START="pibit/hooks/webpostexploit_start.sh {service} {attack_id} {level} {host} {port} {duration_s} {run_dir}"

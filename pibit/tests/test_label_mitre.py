@@ -43,12 +43,16 @@ def _chat_span(sec_start: int, sec_end: int, text: str) -> dict:
     }
 
 
-def _tool_span(sec_start: int, sec_end: int, tool: str) -> dict:
+def _tool_span(sec_start: int, sec_end: int, tool: str, args: dict | None = None) -> dict:
+    attrs = {"gen_ai.operation.name": "execute_tool", "gen_ai.tool.name": tool}
+    if args is not None:
+        # o campo estrutural `mitre_technique` viaja dentro dos argumentos da tool call (JSON string)
+        attrs["gen_ai.tool.call.arguments"] = json.dumps(args)
     return {
         "trace_id": "t", "span_id": f"x{sec_start}", "parent_span_id": None,
         "name": "execute_tool", "kind": "INTERNAL",
         "start_time": _iso(sec_start), "end_time": _iso(sec_end),
-        "attributes": {"gen_ai.operation.name": "execute_tool", "gen_ai.tool.name": tool},
+        "attributes": attrs,
         "status": {"code": "OK", "message": ""},
     }
 
@@ -101,6 +105,38 @@ def test_empty_trace_labels_all_benign(tmp_path: Path):
     out = lm.label_dataframe(df, tl, scenario="H3")
     assert list(out["attack"]) == [0, 0]
     assert set(out["mitre_technique_id"]) == {"none"}
+
+
+def test_structural_mitre_field_overrides_chat_text(tmp_path: Path):
+    # Uma tool call cujo campo estrutural `mitre_technique` DIFERE da linha 'MITRE:' do chat anterior:
+    # a janela deve adotar o valor ESTRUTURAL (sobrevive a poda da janela de contexto), nao o texto do chat.
+    spans = [
+        _chat_span(0, 2, "Plano.\nMITRE: T1046 Network Service Discovery\nvou agir."),
+        _tool_span(3, 5, "HTTPRequest",
+                   args={"method": "GET", "path": "/",
+                         "mitre_technique": "T1078.001 Valid Accounts: Default Accounts"}),
+    ]
+    p = tmp_path / "log-struct.jsonl"
+    p.write_text("\n".join(json.dumps(s) for s in spans), encoding="utf-8")
+    tl = lm.extract_mitre_timeline(p, assume_tz="utc")
+    assert len(tl) == 1
+    assert tl[0].mitre_id == "T1078.001"
+    assert tl[0].mitre_name == "Valid Accounts: Default Accounts"
+
+
+def test_missing_structural_field_falls_back_to_chat_text(tmp_path: Path):
+    # Sem o campo estrutural (traces antigos / piloto3) a janela cai para a tecnica declarada no chat.
+    spans = [
+        _chat_span(0, 2, "Plano.\nMITRE: T1046 Network Service Discovery\nvou agir."),
+        _tool_span(3, 5, "HTTPRequest"),                                       # sem args -> fallback
+        _tool_span(6, 8, "HTTPRequest", args={"method": "GET", "path": "/x"}),  # args sem mitre_technique -> fallback
+    ]
+    p = tmp_path / "log-fallback.jsonl"
+    p.write_text("\n".join(json.dumps(s) for s in spans), encoding="utf-8")
+    tl = lm.extract_mitre_timeline(p, assume_tz="utc")
+    assert len(tl) == 2
+    assert (tl[0].mitre_id, tl[0].mitre_name) == ("T1046", "Network Service Discovery")
+    assert (tl[1].mitre_id, tl[1].mitre_name) == ("T1046", "Network Service Discovery")
 
 
 def _run_all():

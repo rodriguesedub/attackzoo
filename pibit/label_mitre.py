@@ -52,11 +52,14 @@ from typing import Any, Dict, Iterable, List, Optional
 
 # Linha declarada pelo agente: "MITRE: T1078 Valid Accounts" / "MITRE: T1078.001 Default Accounts"
 MITRE_RE = re.compile(r"MITRE:\s*(T\d{4}(?:\.\d{3})?)\s+([^\n\r]+)")
+# Campo estrutural `mitre_technique` de uma tool call: aceita "MITRE: <id> <nome>" ou "<id> <nome>" nu.
+MITRE_FIELD_RE = re.compile(r"^\s*(?:MITRE:\s*)?(T\d{4}(?:\.\d{3})?)\s+([^\n\r]+?)\s*$")
 
 # Chaves das convencoes GenAI usadas pelo motor (ver utils/log_storage.py do hbgpt).
 K_OP = "gen_ai.operation.name"          # "chat" | "execute_tool"
 K_OUT = "gen_ai.output.messages"        # lista de mensagens {role, parts:[{type,content}]}
 K_TOOL = "gen_ai.tool.name"             # ex.: "HTTPRequest"
+K_ARGS = "gen_ai.tool.call.arguments"   # argumentos da tool call (JSON str ou dict): traz o campo mitre_technique
 OP_CHAT = "chat"
 OP_TOOL = "execute_tool"
 
@@ -125,6 +128,21 @@ def _message_text(messages: Any) -> str:
     return "\n".join(out)
 
 
+def _parse_mitre_field(val: str) -> tuple[str, str] | None:
+    """Extrai (id, nome) do campo estrutural `mitre_technique` de uma tool call.
+
+    Aceita tanto 'MITRE: <id> <nome>' quanto um '<id> <nome>' nu (id no formato Tdddd ou
+    Tdddd.ddd). Devolve None quando o valor nao esta nesse formato (ex.: vazio ou nao-str),
+    para que a chamada volte ao fallback da tecnica declarada no texto do chat.
+    """
+    if not isinstance(val, str):
+        return None
+    m = MITRE_FIELD_RE.match(val)
+    if not m:
+        return None
+    return m.group(1), m.group(2).strip()
+
+
 def _iter_spans(jsonl_path: Path) -> Iterable[Dict[str, Any]]:
     with open(jsonl_path, "r", encoding="utf-8") as fh:
         for line in fh:
@@ -178,13 +196,28 @@ def extract_mitre_timeline(
                 current_id, current_name = matches[-1][0], matches[-1][1].strip()
         # Emite janela para toda acao on-wire
         if op == OP_TOOL and attrs.get(K_TOOL, "") in tool_set:
+            # Prefere o campo estrutural `mitre_technique` da tool call (capturado nativamente no
+            # trace, sobrevive a poda da janela de contexto) sobre a tecnica declarada no texto do
+            # chat; cai para current_id/current_name (texto do chat) quando o campo esta ausente,
+            # mantendo compatibilidade com os traces do piloto3 que nao tem esse argumento.
+            win_id, win_name = current_id, current_name
+            raw_args = attrs.get(K_ARGS, "")
+            if isinstance(raw_args, str):
+                try:
+                    raw_args = json.loads(raw_args) if raw_args else {}
+                except json.JSONDecodeError:
+                    raw_args = {}
+            if isinstance(raw_args, dict):
+                parsed = _parse_mitre_field(raw_args.get("mitre_technique", ""))
+                if parsed is not None:
+                    win_id, win_name = parsed
             seq += 1
             timeline.append(Window(
                 seq=seq,
                 t_start=span["_t0"] + clock_offset_s,
                 t_end=span["_t1"] + clock_offset_s,
-                mitre_id=current_id,
-                mitre_name=current_name,
+                mitre_id=win_id,
+                mitre_name=win_name,
                 tool=attrs.get(K_TOOL, ""),
             ))
     return timeline
