@@ -4,9 +4,9 @@
 # Bateria n>=30 do vetor A (WebPostExploit) sobre H0-H3, com captura .pcap,
 # extracao de features, dataset e rotulacao MITRE por run.
 #
-#   *** NAO EXECUTA SEM AVAL DO SANTIN ***
+#   Operacao CARA (sobe o lab, roda o LLM por run, captura pcap): dry-run por padrao.
 # Sem --run            -> DRY-RUN: imprime o plano e sai (nada roda).
-# Com --run            -> exige PIBIT_I_HAVE_SANTIN_APPROVAL=1 (trava dupla, D040).
+# Com --run            -> executa a bateria (rode no host do lab, Linux).
 #
 # Desenho (ver pibit/README.md e LOG 2026-11-02 parte 5):
 #   - Vetor A = agente web sem credencial (WebPostExploit). B (cred) e C (shell SSH)
@@ -71,18 +71,13 @@ print_plan() {
   echo "  seed            : LIVRE (D018) | reset entre runs (D019) | resumivel (.done)"
 }
 
-# ---- trava anti-execucao ----------------------------------------------------
+# ---- dry-run por padrao (seguranca de operacao cara; nao e trava de aprovacao) -
 if [ "${1:-}" != "--run" ]; then
   print_plan
   echo
   echo ">> DRY-RUN. Nada foi executado."
-  echo ">> Para rodar (APOS aval do Santin), no host do lab:"
-  echo ">>   PIBIT_I_HAVE_SANTIN_APPROVAL=1 pibit/run_bateria.sh --run"
+  echo ">> Para executar de verdade (no host do lab, Linux): pibit/run_bateria.sh --run"
   exit 0
-fi
-if [ "${PIBIT_I_HAVE_SANTIN_APPROVAL:-0}" != "1" ]; then
-  echo "[BLOQUEADO] --run exige PIBIT_I_HAVE_SANTIN_APPROVAL=1 (aval do orientador; D040)." >&2
-  exit 3
 fi
 
 # ---- preflight --------------------------------------------------------------

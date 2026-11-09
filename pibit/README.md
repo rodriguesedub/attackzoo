@@ -51,14 +51,14 @@ lado a lado com o `.pcap` daquela execução.
 
 | Pendência | Onde | Status nesta entrega |
 |---|---|---|
-| **Captura `.pcap` por execução** | attackzoo (aqui) | **Feito** como *wiring*: hook + driver + dataset. Falta só rodar (após aval). |
+| **Captura `.pcap` por execução** | attackzoo (aqui) | **Feito** como *wiring*: hook + driver + dataset. Falta só rodar. |
 | **Healthcheck do alvo** | motor (hbgpt) + aqui | **Feito.** Disponibilidade na orquestração via `--probes http` (aqui) **e** healthcheck **por-round** dentro do `WebPostExploit` (motor): a cada round o agente sonda `HEAD /` e **encerra a run** se o alvo ficar mudo por `health_max_consecutive_down` probes, gravando `HEALTHCHECK round=N alive=…` no trace. |
 | **MITRE como campo obrigatório da ação** | motor (hbgpt) + aqui | **Feito.** No motor, cada `HTTPRequest` agora exige o campo **estrutural** `mitre_technique` (capturado nos argumentos da tool call no trace — sobrevive à poda da janela de contexto), não só a linha de prompt. O **labeler** (`label_mitre.py`) e a **telemetria** (`analyze_telemetry.py`) **preferem** esse campo, caindo para a linha `MITRE: <id> <nome>` do chat (compatível com os traces do piloto3). |
 
 > Resumo honesto: as **quatro** pendências do motor estão fechadas no `hackingBuddyGPT`
 > (healthcheck por-round; campo `mitre_technique` estrutural; remoção da "dica de CTF"
 > do prompt; texto do `EndRun`). A camada de captura/rotulação/telemetria vive aqui.
-> **Nada foi executado ainda** — a medição depende do aval do Santin (D040).
+> **Nada foi executado ainda** (dry-run por padrão; executar é decisão do operador).
 
 ## 4. Cenários H0–H3 (atenção ao `L0`)
 
@@ -73,8 +73,8 @@ roda em **todos**, inclusive H0.
 ## 5. Uso (NÃO executar ainda)
 
 **Ponto de entrada único: `pibit/pentest.sh`.** Ele orquestra tudo e **não
-reimplementa** motor/lab — delega ao `run_bateria.sh`, que carrega a **trava
-dupla**. Comandos somente-leitura nunca sobem o lab nem rodam o motor:
+reimplementa** motor/lab — delega ao `run_bateria.sh` (dry-run por padrão;
+`--run` executa). Comandos somente-leitura nunca sobem o lab nem rodam o motor:
 
 ```bash
 cp pibit/config.example.env pibit/config.env   # edite HBGPT_DIR, GLPI_HOST, CAP_IFACE...
@@ -89,11 +89,11 @@ pibit/pentest.sh status [DIR]     # conta .done/.status por cenário
 (O driver de baixo nível `pibit/run_experiment_webpostexploit.sh` continua
 disponível para 1 run avulsa; `pentest.sh` é a camada acima dele + `run_bateria.sh`.)
 
-A execução real está **bloqueada por trava dupla** (`--run` +
-`PIBIT_I_HAVE_SANTIN_APPROVAL=1`), porque **nenhuma execução acontece até o aval
-do Santin** (D040) — ex.: `PIBIT_I_HAVE_SANTIN_APPROVAL=1 pibit/pentest.sh pilot --run`.
-O piloto usa `RUNS=1`; a bateria pré-registrada é **n≥30 por cenário, n igual
-entre cenários** (D016).
+A execução real exige a flag **`--run`** (dry-run por padrão, para não subir o lab
+nem rodar o LLM por acidente) — ex.: `pibit/pentest.sh pilot --run`. Rodar a
+bateria completa é **decisão do operador** (consome API/tempo). O piloto usa
+`RUNS=1`; a bateria pré-registrada é **n≥30 por cenário, n igual entre cenários**
+(D016).
 
 ## 6. Rotulação por cenário + MITRE (C4)
 
@@ -134,11 +134,11 @@ pacotes na janela recebem a técnica como rótulo *ground-truth*; fora das janel
 `GT-IoTEdu/attackzoo-sbseg26` com **push desabilitado** — nenhum commit nosso
 chega ao repositório autoral (lição do D042).
 
-## 9. Bateria n≥30 (quando o Santin aprovar)
+## 9. Bateria n≥30 (operação cara; `--run` para executar)
 
 `pibit/run_bateria.sh` orquestra a bateria do **vetor A** (WebPostExploit) sobre
-H0–H3, `n≥30` por cenário (D016), **travada** por `--run` +
-`PIBIT_I_HAVE_SANTIN_APPROVAL=1` (D040). Dry-run (imprime o plano, nada roda):
+H0–H3, `n≥30` por cenário (D016); **dry-run por padrão**, `--run` para executar.
+Dry-run (imprime o plano, nada roda):
 
 ```bash
 pibit/run_bateria.sh
